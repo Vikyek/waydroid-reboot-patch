@@ -1,0 +1,104 @@
+#!/bin/bash
+# waydroid-reboot-patch — main CLI
+# Applies/checks patches that fix Waydroid closing after an Android reboot.
+set -euo pipefail
+
+PATCH_DIR="/usr/share/waydroid-reboot-patch"
+HM="/usr/lib/waydroid/tools/services/hardware_manager.py"
+LXC="/usr/lib/waydroid/tools/helpers/lxc.py"
+DROPIN="/etc/systemd/system/waydroid-container.service.d/restart.conf"
+
+usage() {
+    cat <<EOF
+Usage: waydroid-reboot-patch <command>
+
+Commands:
+  apply    Apply all patches (idempotent, safe to re-run after upgrades)
+  check    Report whether patches are currently applied
+  remove   Restore original waydroid files from package
+
+EOF
+}
+
+need_root() {
+    [[ $EUID -eq 0 ]] || { echo "error: must run as root"; exit 1; }
+}
+
+cmd_check() {
+    local ok=1
+    if grep -q "attempt in range" "$HM" 2>/dev/null; then
+        echo "[ok] hardware_manager.py — retry logic present"
+    else
+        echo "[missing] hardware_manager.py — retry logic NOT applied"
+        ok=0
+    fi
+
+    if grep -qP "timeout = 3\d$" "$LXC" 2>/dev/null; then
+        echo "[ok] lxc.py — wait_for_running timeout extended"
+    else
+        echo "[missing] lxc.py — wait_for_running still at default 10s"
+        ok=0
+    fi
+
+    if [[ -f "$DROPIN" ]]; then
+        echo "[ok] systemd drop-in — Restart=on-failure present"
+    else
+        echo "[missing] systemd drop-in — no restart policy"
+        ok=0
+    fi
+
+    [[ $ok -eq 1 ]] && echo "All patches applied." || { echo "Some patches missing."; return 1; }
+}
+
+cmd_apply() {
+    need_root
+
+    # 1. hardware_manager.py — replace with patched version
+    if ! grep -q "attempt in range" "$HM" 2>/dev/null; then
+        cp "$PATCH_DIR/patches/hardware_manager.py" "$HM"
+        echo "[applied] hardware_manager.py"
+    else
+        echo "[skip] hardware_manager.py already patched"
+    fi
+
+    # 2. lxc.py — bump wait_for_running timeout 10s → 30s
+    if grep -q "timeout = 10$" "$LXC" 2>/dev/null; then
+        sed -i 's/timeout = 10$/timeout = 30/' "$LXC"
+        echo "[applied] lxc.py timeout → 30s"
+    else
+        echo "[skip] lxc.py timeout already patched or changed upstream"
+    fi
+
+    # 3. Verify syntax
+    python3 -c "import ast; ast.parse(open('$HM').read())" \
+        && echo "[ok] hardware_manager.py syntax valid"
+
+    # 4. systemd drop-in
+    install -Dm644 "$PATCH_DIR/systemd/restart.conf" "$DROPIN"
+    systemctl daemon-reload
+    echo "[applied] systemd drop-in (Restart=on-failure)"
+
+    # 5. Restart container service if it's currently active
+    if systemctl is-active --quiet waydroid-container.service; then
+        systemctl restart waydroid-container.service
+        echo "[restarted] waydroid-container.service"
+    fi
+
+    echo "Done."
+}
+
+cmd_remove() {
+    need_root
+    echo "Restoring waydroid files from package..."
+    pacman -S --noconfirm waydroid
+    rm -f "$DROPIN"
+    systemctl daemon-reload
+    echo "Patches removed."
+}
+
+case "${1:-}" in
+    apply)  cmd_apply  ;;
+    check)  cmd_check  ;;
+    remove) cmd_remove ;;
+    *)      usage; exit 1 ;;
+esac

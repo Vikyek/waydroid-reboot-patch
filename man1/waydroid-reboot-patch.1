@@ -1,0 +1,52 @@
+.TH WAYDROID-REBOOT-PATCH 1 "2026-10-30" "1.0.0" "waydroid-reboot-patch"
+.SH NAME
+waydroid-reboot-patch \- fix Waydroid closing after Android reboot
+.SH SYNOPSIS
+.B waydroid-reboot-patch
+.I command
+.SH DESCRIPTION
+Patches two files in the
+.B waydroid
+package to fix a race condition where an in-guest Android reboot causes the
+LXC container to fail restarting within the hard 10-second window, killing
+.B waydroid-container.service
+and leaving Waydroid unresponsive.
+
+A pacman alpm hook automatically re-applies the patches whenever
+.B waydroid
+is upgraded.
+.SH COMMANDS
+.TP
+.B apply
+Apply all patches (idempotent).
+.TP
+.B check
+Report which patches are currently applied.
+.TP
+.B remove
+Restore original waydroid files via pacman and remove the systemd drop-in.
+.SH PATCHES
+.TP
+.I /usr/lib/waydroid/tools/services/hardware_manager.py
+Wraps
+.B reboot()
+and the reboot branch of
+.B shutdownRequest()
+in a 3-attempt retry loop with 5-second gaps.
+.TP
+.I /usr/lib/waydroid/tools/helpers/lxc.py
+Extends
+.B wait_for_running()
+timeout from 10 to 30 seconds so the container has time to reach RUNNING
+after binder node reset.
+.TP
+.I /etc/systemd/system/waydroid-container.service.d/restart.conf
+Adds
+.B Restart=on-failure
+as a backstop in case the service still exits unexpectedly.
+.SH SEE ALSO
+.BR waydroid (1),
+.BR lxc-start (1),
+.BR systemctl (1)
+.SH AUTHORS
+Patch authored against waydroid 1.6.3.

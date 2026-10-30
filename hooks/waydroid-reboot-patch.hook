@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = waydroid
+
+[Action]
+Description = Re-applying waydroid Android reboot fix patches...
+When = PostTransaction
+Exec = /usr/bin/waydroid-reboot-patch apply
+NeedsTargets
