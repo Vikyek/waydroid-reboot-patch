@@ -1,0 +1,13 @@
+pkgbase = waydroid-reboot-patch
+	pkgdesc = Fix Waydroid closing after Android in-guest reboot — retry logic + systemd restart policy
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/Vikyek/waydroid-reboot-patch
+	arch = any
+	license = GPL-3.0-or-later
+	depends = waydroid
+	backup = usr/share/waydroid-reboot-patch/patches/hardware_manager.py
+	source = waydroid-reboot-patch-1.0.0.tar.gz::https://github.com/Vikyek/waydroid-reboot-patch/archive/refs/tags/v1.0.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = waydroid-reboot-patch
